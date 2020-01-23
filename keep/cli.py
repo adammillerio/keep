@@ -3,7 +3,12 @@ import os
 import sys
 import logging
 import click
+from pathlib import Path
 from typing import List, Any
+
+from yaml import safe_load
+
+logger = logging.getLogger(__name__)
 
 class Keep(click.MultiCommand):
   """Keep CLI class.
@@ -17,7 +22,9 @@ class Keep(click.MultiCommand):
 
   # Command folder, containing all Click CLI commands
   # keep/commands
-  command_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), 'commands'))
+  command_folder = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), 'commands')
+  )
 
   def list_commands(self, ctx) -> List[str]:
     """Retrieve a list of available CLI commands.
@@ -97,29 +104,67 @@ class Context(object):
     """Initialize a Click CLI context"""
 
     self.verbose = False
-    self.dry_run = False
+    self.username = ''
+    self.password = ''
+    self.config_dir = ''
+
+  def load_config(self) -> None:
+    """Load a context from a YAML configuration file
+
+    This method loads config.yaml in the configured config dir and updates
+    any context values with those found in the file.
+
+    """
+
+    # TODO: Add functionality to avoid storing password in plaintext
+    path = os.path.join(self.config_dir, 'config.yaml')
+    
+    try:
+      with open(path, 'r') as file:
+        # Load the provided config yaml and update context class with values
+        # TODO: Limit the scope of what can be loaded from this file
+        self.__dict__.update(safe_load(file))
+    except FileNotFoundError:
+      # Skip if the config file doesn't exist
+      logger.debug(f'Config file at {path} does not exist, skipping...')
 
 # Function decorator to pass the global CLI context into a function
 pass_context = click.make_pass_decorator(Context, ensure=True)
 
 @click.command(cls=Keep, context_settings=CONTEXT_SETTINGS)
 @click.option('--verbose', is_flag=True, help='Enable verbose output')
-@click.option('--dry-run', is_flag=True, help='Print all actions to console without applying')
+@click.option('--config-dir', type=click.STRING, help='Config/state directory')
 @click.option('--username', type=click.STRING, help='Google Keep username')
 @click.option('--password', type=click.STRING, help='Google Keep password')
 @pass_context
-def cli(ctx: Context, verbose: bool, dry_run: bool, username: str, password: str) -> None:
+def cli(
+  ctx: Context,
+  verbose: bool,
+  config_dir: str,
+  username: str,
+  password: str
+) -> None:
   """Google Keep CLI tool
 
   keep is a command line tool for managing your Google Keep notes.
 
   """
 
+  if config_dir is None:
+    # Default to ~/.config/keep
+    ctx.config_dir = os.path.join(Path.home(), '.config', 'keep')
+  
+  # Attempt to load a local config
+  ctx.load_config()
+
   # Set context values
   ctx.verbose = verbose
-  ctx.dry_run = dry_run
-  ctx.username = username
-  ctx.password = password
+
+  if username is not None:
+    ctx.username = username
+
+  if password is not None:
+    ctx.password = password
 
   # Set log level
   if verbose:
